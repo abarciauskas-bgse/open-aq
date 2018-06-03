@@ -1,4 +1,18 @@
-import imports
+# TODO: Extract requirements from imports.py, so there is no duplication
+import pandas as pd
+import numpy as np
+from sklearn import ensemble
+from sklearn.cluster import DBSCAN
+from shapely.geometry import MultiPoint
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_samples, silhouette_score
+# Statistical tools
+from scipy.spatial.distance import squareform, pdist
+from scipy import stats
+from scipy.stats import gamma, pearsonr
+from scipy import signal as sp_signal
+### Zip Code database API
+from uszipcode import ZipcodeSearchEngine
 
 class OutlierDetection(object):
     def __init__(self, us_data_pm25_df):
@@ -18,9 +32,9 @@ class OutlierDetection(object):
         self.date_map_df = date_map_df
     
 
-    def coords_to_df( self ): 
+    def coords_to_df( self ):
         # Create a DataFrame of Unique Location Coordinates of ALL sensors in the US
-        coords_df = us_data_pm25_df[['location','latitude', 'longitude']].drop_duplicates()\
+        coords_df = self.us_data_pm25_df[['location','latitude', 'longitude']].drop_duplicates()\
                                                                     .reset_index()\
                                                                     .drop("index",axis=1)
         # Prep the Coordinate DF for a distance matrix
