@@ -13,6 +13,7 @@ from scipy.stats import gamma, pearsonr
 from scipy import signal as sp_signal
 ### Zip Code database API
 from uszipcode import ZipcodeSearchEngine
+import statsmodels.api as sm
 
 class OutlierDetection(object):
     def __init__(self, us_data_pm25_df):
@@ -232,7 +233,7 @@ class OutlierDetection(object):
 
         sm_lowess_df = x.dropna()
 
-        dates_df=pd.DataFrame(unstacked_df.index)
+        dates_df=pd.DataFrame(self.unstacked_df.index)
 
         x=sm_lowess_df.index
         y=sm_lowess_df
@@ -250,7 +251,7 @@ class OutlierDetection(object):
     def calc_sq_residuals( self, unstacked_df ):
 
         # lowess smoother
-        smoother_applied_df = unstacked_df.apply(lambda x: apply_lowess(x)).set_index(unstacked_df.index)
+        smoother_applied_df = unstacked_df.apply(lambda x: self.apply_lowess(x)).set_index(unstacked_df.index)
 
         # residuals 
         calc_resids_applied_df = unstacked_df-smoother_applied_df
