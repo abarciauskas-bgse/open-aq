@@ -22,6 +22,18 @@ class Outlier_Detection(object):
 
     def extract_time( self ):
         
+        '''
+        This function extracts the hour and the day number in the month from
+        the local datetime
+        
+        It consumes a dataframe that contains local datetime
+        
+        It returns:
+            - a dataframe of unique datetimes and their mapping to 
+                hour and day number
+            - the input dataframe with hour and day number columns merged
+        '''
+        
         us_data_pm25_df = self.us_data_pm25_df
         
         date_map_df = pd.DataFrame(us_data_pm25_df["local"].drop_duplicates())
@@ -41,6 +53,16 @@ class Outlier_Detection(object):
 
     def coords_to_df( self ): 
         
+        '''
+        This function consumes a dataframe that contains:
+            - location name
+            - latitude
+            - longitude
+            
+        It then removes duplicates and creates a matrix to be consumed
+        by the kmeans model
+        '''
+        
         us_data_pm25_df = self.us_data_pm25_df
         # Create a DataFrame of Unique Location Coordinates of ALL sensors in the US
         coords_df = us_data_pm25_df[['location','latitude', 'longitude']].drop_duplicates()\
@@ -51,9 +73,20 @@ class Outlier_Detection(object):
 
         self.coords_df, self.coords = coords_df, coords
 
-    #TODO: Add elevation to this
 
     def kmeans_gsearch( self ):
+        
+        '''
+        This function consumes the unique coordinates and iterates over kmeans models
+        
+        While it iterates, it saves a list of means for the clusters in each model for:
+            - silhouette score
+            - sum of squared errors
+            
+        The silhouette score is a ratio of the compactness and isolation for the clusters
+        
+        We will choose the number of clusters by finding the highest silhouette score
+        '''
         
         coords_df = self.coords_df
         
@@ -64,6 +97,7 @@ class Outlier_Detection(object):
         X = np.array(list(zip(f1, f2)))
 
         # Looping through silhouette scores to find an optimal compactness and isolation
+        # TODO: Revisit this range. It was chosen hueristically 
         cluster_range = range( 30, 85 )
         cluster_errors = []
         cluster_sil_means = []
@@ -89,6 +123,11 @@ class Outlier_Detection(object):
 
     def kmeans_optimized( self ):
         
+        '''
+        This function runs the kmeans model with the optimal number of clusters, chosen 
+        with the max silhouette score
+        '''
+        
         clusters_df = self.clusters_df
         X = self.X 
 
@@ -108,6 +147,11 @@ class Outlier_Detection(object):
 
     def merge_labels( self ):
         
+        '''
+        This function merges the cluster labels from the kmeans model to the 
+        time series dataset 
+        '''
+        
         coords_df = self.coords_df
         us_data_pm25_df = self.us_data_pm25_df
         labels = self.labels
@@ -122,6 +166,11 @@ class Outlier_Detection(object):
         self.working_df, self.coords_df = working_df, coords_df
 
     def dist_matrix( self ):
+        
+        '''
+        This function creates a pairwise distance matrix for the cluster centroids
+        based on latitude and longitude, then converts it to km
+        '''
         
         working_df = self.working_df
 
@@ -141,19 +190,27 @@ class Outlier_Detection(object):
                                    , index= midpoints_df.geo_cluster.unique() )
 
         # 1 degree is about 111km
+        # TODO: This is actually variable
         dist_matrix_km = dist_matrix*111
 
         self.dist_matrix_km, self.midpoints_df = dist_matrix_km, midpoints_df
 
     def flag_neighbor(self, x, km=400):
         
-        # a default parameter is set to 400km
+        # A default parameter is set to 400km
+        # TODO: Revisit this distance. This was just a guess for how far PM 2.5 effects could reach. There's no support.
         if (int(x) !=0) & (int(x) <=km):
             return 1
         else:
             return 0
 
     def neighbor_lookup( self ):
+        
+        '''
+        This function uses the distance matrix to create a list of neighboring centroid within 400km for 
+        each cluster centroid
+            - The output is a dictionary
+        '''
 
         dist_matrix_dummies = self.dist_matrix_km.applymap(self.flag_neighbor)\
                                             .reset_index()\
@@ -181,6 +238,11 @@ class Outlier_Detection(object):
 
     def get_cities( self ):
         
+        '''
+        This function uses the zipcodes API to return the city name for each cluster centroid,
+        based on latitude and longitude
+        '''
+        
         midpoints_df = self.midpoints_df
         
         search = ZipcodeSearchEngine()
@@ -206,6 +268,11 @@ class Outlier_Detection(object):
 
     def resample_and_unstack( self ):
         
+        '''
+        This function chooses a single hour of the day and dedups the time series, then
+        creates a column for each cluster's mean reading values for PM 2.5
+        '''
+        
         working_df = self.working_df
         
         grouped_ts_df = working_df[working_df["local_hour"]==18]\
@@ -230,6 +297,14 @@ class Outlier_Detection(object):
         self.unstacked_df = unstacked_df
 
     def non_persistent_ts( self ):
+        
+        '''
+        This function looks at a rolling 4 records window and creates an indicator
+        if any records are null
+        
+        If more than 20 percent of the records have an indicator, then the cluster
+        is dropped
+        '''
         
         unstacked_df = self.unstacked_df
         
@@ -257,6 +332,10 @@ class Outlier_Detection(object):
 
     def treat_ts( self ):
         
+        '''
+        This function interpolates between null records with a cubic spline
+        '''
+        
         keep_list = self.keep_list
         unstacked_df = self.unstacked_df
         
@@ -267,6 +346,11 @@ class Outlier_Detection(object):
         self.treated_ts_df = unstacked_df.loc[:,0:].apply(lambda x: x.interpolate(method='spline', order=3))
 
     def apply_lowess(self, x):
+        
+        '''
+        This function applies lowess smoothing to each centroid column
+        '''
+        
         treated_ts_df = self.treated_ts_df
         
         lowess = sm.nonparametric.lowess
@@ -289,7 +373,12 @@ class Outlier_Detection(object):
         return merged_df["LOWESS"]
 
     
-    def calc_sq_residuals( self ):    
+    def calc_sq_residuals( self ):  
+        
+        '''
+        This function subtracts each cluster's lowess smoothed time series from the 
+        time series and then squares the residuals 
+        '''
         
         treated_ts_df = self.treated_ts_df
 
@@ -304,6 +393,12 @@ class Outlier_Detection(object):
 
     # TODO: grid seach epsilons according to volatility of each cluster
     def cluster_residuals( self, X ): 
+        
+        '''
+        This function maps DBSCAN to the squared residuals for each cluster and identify outliers for 
+        each time series 
+        '''
+        
         db = DBSCAN(\
                       eps=.9\
                     , min_samples=4\
@@ -316,6 +411,11 @@ class Outlier_Detection(object):
         return db.labels_
     
     def get_outliers( self ):
+        
+        '''
+        This function creates a mask dataframe for the outlier indicator and applies it to the 
+        original time series, which results in the outlier PM 2.5 measurement value or a null 
+        '''
         
         calc_sq_resids_applied_df = self.calc_sq_resids_applied_df
         treated_ts_df = self.treated_ts_df
