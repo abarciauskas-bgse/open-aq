@@ -16,6 +16,8 @@ from uszipcode import ZipcodeSearchEngine
 
 class Outlier_Detection(object):
     
+    #TODO: kwargs and params for methods 
+    
     def __init__(self, us_data_pm25_df):
 
         self.us_data_pm25_df = us_data_pm25_df
